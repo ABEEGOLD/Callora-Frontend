@@ -17,6 +17,8 @@
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { AccountProvider } from '../hooks/useAccountContext';
+import { addAccount, switchAccount, _reset } from '../state/accountStore';
 import { BillingHistory, MOCK_TRANSACTIONS } from './BillingHistory';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -34,7 +36,7 @@ function getTriggerInRow(row: HTMLElement) {
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
 describe('BillingHistory — page structure', () => {
-  afterEach(cleanup);
+  afterEach(() => { cleanup(); _reset(); });
 
   it('renders the page heading', () => {
     render(<BillingHistory />);
@@ -53,6 +55,15 @@ describe('BillingHistory — page structure', () => {
     expect(
       screen.getByRole('table', { name: /billing transaction history/i }),
     ).toBeTruthy();
+  });
+
+  it('formats dates and labels the header in the active account timezone', async () => {
+    addAccount({ id: 'billing-ny', label: 'New York', apiKey: 'test-key', timezone: 'America/New_York' });
+    switchAccount('billing-ny');
+    render(<AccountProvider><BillingHistory /></AccountProvider>);
+    const dateHeader = await screen.findByRole('columnheader', { name: /date \(EDT\)/i });
+    expect(dateHeader).toBeTruthy();
+    expect(screen.getByText('Jul 25, 10:32 AM')).toBeTruthy();
   });
 
   it('renders column headers with scope="col"', () => {

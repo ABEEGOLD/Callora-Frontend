@@ -25,7 +25,8 @@
 import { useId, useMemo, useState } from 'react';
 import PreviewCard, { type PreviewCardData } from '../components/PreviewCard';
 import StatusBadge, { type StatusVariant } from '../components/StatusBadge';
-import { formatUsdcAmount, formatDateShort } from '../utils/format';
+import { formatUsdcAmount, formatDateShort, resolveTimeZone } from '../utils/format';
+import { useAccountContext } from '../hooks/useAccountContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -183,6 +184,12 @@ function txToPreviewData(tx: BillingTransaction): PreviewCardData {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function BillingHistory() {
+  const { timezone } = useAccountContext();
+  const dateZone = resolveTimeZone(timezone);
+  const zoneAbbreviation = new Intl.DateTimeFormat(undefined, {
+    timeZone: dateZone,
+    timeZoneName: 'short',
+  }).formatToParts(new Date()).find((part) => part.type === 'timeZoneName')?.value;
   // ── Filter state ──────────────────────────────────────────────────────────
   const [typeFilter, setTypeFilter] = useState<TxType | 'All'>('All');
   const [statusFilter, setStatusFilter] = useState<TxStatus | 'All'>('All');
@@ -480,7 +487,7 @@ export function BillingHistory() {
               >
                 {(
                   [
-                    { label: 'Date', width: '160px' },
+                    { label: `Date (${zoneAbbreviation ?? dateZone})`, width: '160px' },
                     { label: 'Description', width: 'auto' },
                     { label: 'Type', width: '110px' },
                     { label: 'Status', width: '110px' },
@@ -527,7 +534,7 @@ export function BillingHistory() {
                       fontSize: '0.75rem',
                     }}
                   >
-                    <time dateTime={tx.timestamp}>{formatDateShort(tx.timestamp)}</time>
+                    <time dateTime={tx.timestamp}>{formatDateShort(tx.timestamp, undefined, dateZone)}</time>
                   </td>
 
                   {/* Description cell — wraps the PreviewCard trigger */}

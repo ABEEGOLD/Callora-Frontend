@@ -9,6 +9,7 @@ const DEFAULT_ACCOUNTS = [
 
 interface AccountContextValue {
   account: { id: string; label: string; apiKey: string; timezone?: string } | null;
+  timezone?: string;
   accounts: { id: string; label: string; apiKey: string; timezone?: string }[];
   switchAccount: (accountId: string) => void;
 }
@@ -52,7 +53,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   if (!ready) return null;
 
   return (
-    <AccountContext.Provider value={{ account, accounts, switchAccount: switchAccountHandler }}>
+    <AccountContext.Provider
+      value={{ account, timezone: account?.timezone, accounts, switchAccount: switchAccountHandler }}
+    >
       {children}
     </AccountContext.Provider>
   );
