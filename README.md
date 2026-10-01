@@ -96,6 +96,16 @@ The tables below list every entry in `SHORTCUTS` (`src/hooks/useGlobalShortcuts.
 | --- | ------ |
 | `s` | Select recommended pricing plan |
 
+#### ApiUsage
+
+| Key | Action |
+| --- | ------ |
+| `t` | Make test call |
+| `h` | Toggle request history |
+| `c` | Copy API key |
+| `s` | Share snapshot |
+| `e` | Export CSV |
+
 ### Typing in form fields
 
 `?` and the `g` that starts a navigation sequence go through `useGlobalShortcuts`, which ignores key presses while focus is in an `input`, `textarea` or `select` element or in editable (`contenteditable`) content. Typing in a form therefore never opens the Shortcuts dialog or starts a `g` sequence. `c` (on a focused API card) and `s` (on the pricing table) are handled by those components, which also ignore key presses from text inputs.
