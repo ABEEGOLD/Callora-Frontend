@@ -1,5 +1,10 @@
-import { Fragment, useState } from 'react';
-import { useWebhookDeliveries, type WebhookDelivery } from '../hooks/useWebhookDeliveries';
+import { Fragment, useEffect, useState } from 'react';
+import {
+  useWebhookDeliveries,
+  type WebhookDeliveriesFetcher,
+  type WebhookDelivery,
+} from '../hooks/useWebhookDeliveries';
+import { useAccountId } from '../hooks/useAccount';
 import { useToast } from '../components/Toast';
 import { Pagination } from '../components/Pagination';
 import { JsonViewer } from '../components/JsonViewer';
@@ -82,8 +87,13 @@ function DeliveryDetailPanel({ delivery }: { delivery: WebhookDelivery }) {
   );
 }
 
-export default function WebhookDeliveries() {
-  const [accountId, setAccountId] = useState('acc_123');
+interface WebhookDeliveriesProps {
+  /** Injectable for tests; defaults to the hook's fetcher. */
+  fetcher?: WebhookDeliveriesFetcher;
+}
+
+export default function WebhookDeliveries({ fetcher }: WebhookDeliveriesProps = {}) {
+  const accountId = useAccountId();
   const {
     deliveries,
     totalCount,
@@ -95,7 +105,13 @@ export default function WebhookDeliveries() {
     retryDelivery,
     retryingId,
     refresh,
-  } = useWebhookDeliveries(accountId);
+  } = useWebhookDeliveries(accountId, fetcher);
+
+  // Pagination belongs to the account being viewed: switching accounts starts
+  // again from the first page.
+  useEffect(() => {
+    setFilter((f) => (f.page === 1 ? f : { ...f, page: 1 }));
+  }, [accountId, setFilter]);
 
   const { showToast } = useToast();
 
@@ -128,18 +144,6 @@ export default function WebhookDeliveries() {
       <h1>Webhook Deliveries</h1>
 
       <div style={{ marginBottom: '16px', display: 'flex', gap: '8px' }}>
-        <button onClick={() => {
-          setAccountId(accountId === 'acc_123' ? 'acc_456' : 'acc_123');
-          setFilter(f => ({ ...f, page: 1 }));
-        }}>
-          Switch Account (Current: {accountId})
-        </button>
-        <button onClick={() => {
-          setAccountId('error-account');
-          setFilter(f => ({ ...f, page: 1 }));
-        }}>
-          Simulate Error Account
-        </button>
         <button onClick={refresh}>Refresh</button>
       </div>
 

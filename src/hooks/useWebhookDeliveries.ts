@@ -22,18 +22,22 @@ export interface WebhookFilter {
   page: number;
 }
 
-export const fetchDeliveries = async (
+export type WebhookDeliveriesFetcher = (
   accountId: string,
   filter: WebhookFilter,
   signal: AbortSignal,
-): Promise<{ data: WebhookDelivery[]; totalCount: number }> => {
+) => Promise<{ data: WebhookDelivery[]; totalCount: number }>;
+
+// Mock API function
+export const fetchDeliveries: WebhookDeliveriesFetcher = async (
+  _accountId,
+  filter,
+  signal,
+) => {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       if (signal.aborted) {
         return reject(new DOMException("Aborted", "AbortError"));
-      }
-      if (accountId === "error-account") {
-        return reject(new Error("Failed to fetch from authoritative source"));
       }
 
       // Mock total of 50 items, but return 2 items per page for testing
@@ -106,8 +110,12 @@ function isRetryableDeliveryError(error: unknown): boolean {
   return false;
 }
 
-export function useWebhookDeliveries(accountId: string) {
+export function useWebhookDeliveries(
+  accountId: string | null,
+  fetcher: WebhookDeliveriesFetcher = fetchDeliveries,
+) {
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
+  const [loadedAccountId, setLoadedAccountId] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
   const [filter, setFilter] = useState<WebhookFilter>({
     page: 1,
@@ -121,24 +129,37 @@ export function useWebhookDeliveries(accountId: string) {
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const requestCounter = useRef(0);
+  const previousAccountId = useRef<string | null>(null);
 
   const loadData = useCallback(
-    async (currentAccountId: string, currentFilter: WebhookFilter) => {
+    async (
+      currentAccountId: string,
+      currentFilter: WebhookFilter,
+      preserveCurrentData = true,
+    ) => {
       const reqId = ++requestCounter.current;
 
-      setStatus((prev) => {
-        if (prev === "success" || prev === "error") {
-          setIsStale(true);
-          return prev;
-        }
-        return "loading";
-      });
+      if (preserveCurrentData) {
+        setStatus((prev) => {
+          if (prev === "success" || prev === "error") {
+            setIsStale(true);
+            return prev;
+          }
+          return "loading";
+        });
+      } else {
+        setDeliveries([]);
+        setTotalCount(0);
+        setLoadedAccountId(null);
+        setStatus("loading");
+        setIsStale(false);
+      }
       setError(null);
 
       const abortController = new AbortController();
 
       try {
-        const response = await fetchDeliveries(
+        const response = await fetcher(
           currentAccountId,
           currentFilter,
           abortController.signal,
@@ -148,6 +169,7 @@ export function useWebhookDeliveries(accountId: string) {
 
         setDeliveries(response.data);
         setTotalCount(response.totalCount);
+        setLoadedAccountId(currentAccountId);
         setStatus("success");
         setIsStale(false);
       } catch (err: any) {
@@ -159,15 +181,29 @@ export function useWebhookDeliveries(accountId: string) {
         setIsStale(false);
       }
     },
-    [],
+    [fetcher],
   );
 
   useEffect(() => {
-    loadData(accountId, filter);
+    if (!accountId) {
+      requestCounter.current += 1;
+      previousAccountId.current = null;
+      setDeliveries([]);
+      setTotalCount(0);
+      setLoadedAccountId(null);
+      setStatus("idle");
+      setError(null);
+      setIsStale(false);
+      return;
+    }
+
+    const accountChanged = previousAccountId.current !== accountId;
+    previousAccountId.current = accountId;
+    loadData(accountId, filter, !accountChanged);
   }, [accountId, filter, loadData]);
 
   const retryDelivery = async (deliveryId: string) => {
-    if (retryingId === deliveryId) return;
+    if (!accountId || retryingId === deliveryId) return;
 
     setRetryingId(deliveryId);
     const idempotencyKey = generateIdempotencyKey();
@@ -192,16 +228,16 @@ export function useWebhookDeliveries(accountId: string) {
         }
       }
       await loadData(accountId, filter);
-    } catch (err) {
-      throw err;
     } finally {
       setRetryingId(null);
     }
   };
 
   return {
-    deliveries,
-    totalCount,
+    // Never show a previous account's rows (or totals) while the active
+    // account's data is loading.
+    deliveries: loadedAccountId === accountId ? deliveries : [],
+    totalCount: loadedAccountId === accountId ? totalCount : 0,
     status,
     error,
     isStale,
@@ -209,6 +245,9 @@ export function useWebhookDeliveries(accountId: string) {
     setFilter,
     retryDelivery,
     retryingId,
-    refresh: () => loadData(accountId, filter),
+    refresh: () => {
+      if (!accountId) return;
+      void loadData(accountId, filter);
+    },
   };
 }
