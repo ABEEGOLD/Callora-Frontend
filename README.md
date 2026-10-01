@@ -115,7 +115,7 @@ When you add a shortcut, add it to `SHORTCUTS` and to the matching table above. 
 
 ## UI Design System
 
-Callora uses a comprehensive design token system and component library. All contributors must follow the [UI Design System guide](docs/UI-Design-System.md) when building or modifying UI.
+Callora uses a comprehensive design token system and component library. All contributors must follow the [UI Design System guide](docs/UI-Design-System.md) when building or modifying UI. For a complete directory of component documentation, accessibility specifications, error handling guides, and theming notes, see the [Documentation Index](docs/README.md).
 
 Key principles:
 
@@ -179,7 +179,7 @@ by removing interactive controls and making content fully visible. (Closes #708)
 
 **Plan Badge empty state (WCAG 2.1 AA, Issue #529):** The `EmptyState` `"plan-badge"` variant illustration is `aria-hidden`; meaning is carried exclusively by the heading and paragraph text (WCAG 1.1.1). Accent colour is a subordinate decorative detail — the state is never communicated by colour alone (WCAG 1.4.1). Both CTA buttons carry explicit accessible names via `aria-label`. All colours reference design tokens so contrast is maintained in both light and dark themes.
 
-**QuotaBanner empty state (WCAG 2.1 AA, Issue #702 / b#025):** When `showEmptyState` and `onSetupQuota` are set, `QuotaBanner` renders `EmptyState` `variant="quota-banner"` (gauge + bars illustration). The illustration is `aria-hidden`; the section is labelled via `aria-labelledby` → `headingId="quota-banner-empty-heading"`. The "Set up quota" CTA guides configuration. See `docs/QuotaBanner-EmptyState.md`.
+**QuotaBanner empty state (WCAG 2.1 AA, Issue #702 / b#025):** When `showEmptyState` and `onSetupQuota` are set, `QuotaBanner` renders `EmptyState` `variant="quota-banner"` (gauge + bars illustration). The illustration is `aria-hidden`; the section is labelled via `aria-labelledby` → `headingId="quota-banner-empty-heading"`. The "Set up quota" CTA guides configuration. See [docs/QuotaBanner-EmptyState.md](docs/QuotaBanner-EmptyState.md).
 ## Scripts
 
 | Command                | Description                                    |
@@ -257,7 +257,7 @@ When you add a route (an `APP_ROUTES` entry, a `<Route>` in `src/App.tsx` or a p
   - **`state/`** — Zustand state management slices and global stores
   - **`styles/`** — Global CSS, design tokens, and utility classes
   - **`utils/`** — Pure utility functions (e.g., [Response Diff Engine](docs/ResponseDiff.md))
-- **`docs/`** — Technical documentation and architecture records
+- **`docs/`** — Technical documentation and architecture records (start at the [Documentation Index](docs/README.md))
 
 
 This repo is part of [Callora](https://github.com/CalloraOrg/callora). Backend and contracts live in separate repos: `callora-backend`, `callora-contracts`.
