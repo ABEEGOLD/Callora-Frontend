@@ -227,7 +227,7 @@ export async function rotateKeyWithToken(
   rotationRequest: RotationRequest,
   sessionToken: string, // Bearer token from current session
 ): Promise<KeyRotationApiResponse> {
-  const idempotencyKey = generateIdempotencyKey("key-rotate");
+  const idempotencyKey = generateIdempotencyKey();
 
   try {
     return await rotationGuard.run(rotationRequest.keyId, () =>
@@ -242,7 +242,6 @@ export async function rotateKeyWithToken(
                 signal,
               ),
             ROTATION_TIMEOUT_MS,
-            "rotateKeyWithToken",
           ),
         {
           maxRetries: ROTATION_MAX_RETRIES,
