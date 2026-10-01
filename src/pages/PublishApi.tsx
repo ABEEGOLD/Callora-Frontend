@@ -475,6 +475,11 @@ export default function PublishApi() {
     [discardDraft, form, isFormValid],
   );
 
+  // ── Simulate a 401 for demo purposes ─────────────────────────────────
+  const handleSimulateExpiry = useCallback(() => {
+    signalExpiry();
+  }, [signalExpiry]);
+
   // ── Success screen ─────────────────────────────────────────────────────
 
   if (submitted) {
@@ -520,11 +525,6 @@ export default function PublishApi() {
   }
 
   // ── Main form ──────────────────────────────────────────────────────────
-
-  // ── Simulate a 401 for demo purposes ─────────────────────────────────
-  const handleSimulateExpiry = useCallback(() => {
-    signalExpiry();
-  }, [signalExpiry]);
 
   return (
     <>
