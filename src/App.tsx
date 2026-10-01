@@ -6,7 +6,7 @@ import useDocumentTitle from "./hooks/useDocumentTitle";
 import NotFound from "./components/NotFound";
 import { startRouteLoading, stopRouteLoading } from "./hooks/useRouteLoading";
 import { formatUsdc, formatUsdShortcut, normalizeUsdcAmountInput, USDC_DECIMALS } from "./utils/format";
-import DepositPreview from "./components/DepositPreview";
+import { useNetworkFee } from "./components/DepositPreview";
 import { EXPLORER_BASE_URL, MIN_DEPOSIT, NETWORK_FEE, PRESET_AMOUNTS, EXTERNAL_LINKS } from "./config/constants";
 import CompareDrawer from "./components/CompareDrawer";
 import CompareTray from "./components/CompareTray";
@@ -406,6 +406,7 @@ function App() {
   const previewCurrentBalance = submittedStartingBalance ?? vaultBalance;
   const projectedBalance = previewCurrentBalance + activeAmount;
   const isBusy = depositStage === "approving" || depositStage === "pending";
+  const { networkFee, isEstimated: isNetworkFeeEstimated } = useNetworkFee(NETWORK_FEE, isDepositOpen);
   const balanceDelta = formatUsdc(submittedAmount ?? (hasAmount ? parsedAmount : 0));
 
   let validationMessage = "";
@@ -947,12 +948,15 @@ function App() {
 
                       <div className="preview-row">
                         <span>Network fee</span>
-                        <strong>{NETWORK_FEE}</strong>
+                        <strong>
+                          <span>{networkFee}</span>
+                          {isNetworkFeeEstimated && <span> (estimated)</span>}
+                        </strong>
                       </div>
 
                       <div className="preview-row total">
                         <span>Total cost</span>
-                        <strong>{hasAmount || submittedAmount ? `${balanceDelta} USDC + ${NETWORK_FEE}` : `0.00 USDC + ${NETWORK_FEE}`}</strong>
+                        <strong>{hasAmount || submittedAmount ? `${balanceDelta} USDC + ${networkFee}` : `0.00 USDC + ${networkFee}`}</strong>
                       </div>
                     </article>
 
