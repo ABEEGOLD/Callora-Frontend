@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useCallback, lazy, Suspense } from "react";
 import { Routes, Route, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { ThemeToggle } from "./ThemeToggle";
-import RouteProgressBar from "./components/RouteProgressBar";
 import ServerError from "./components/ServerError";
 import useDocumentTitle from "./hooks/useDocumentTitle";
 import NotFound from "./components/NotFound";
@@ -15,7 +14,6 @@ import ExternalLink from "./components/ExternalLink";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import OnboardingTour from "./pages/OnboardingTour";
 import { ShortcutsModal } from "./components/ShortcutsModal";
-import { ToastProvider } from "./components/Toast";
 import { useAccountContext } from "./hooks/useAccountContext";
 
 // Route splitting: dynamic imports for all heavy page routes
@@ -578,9 +576,7 @@ function App() {
   };
 
   return (
-    <ToastProvider>
       <div className="app-shell">
-        <RouteProgressBar />
         <a href="#main-content" className="skip-link">
           Skip to main content
         </a>
@@ -1016,7 +1012,6 @@ function App() {
           </div>
         )}
       </div>
-    </ToastProvider>
   );
 }
 
