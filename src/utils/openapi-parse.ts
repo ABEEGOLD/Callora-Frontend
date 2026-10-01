@@ -1,9 +1,10 @@
 /**
- * OpenAPI 3.x specification parser.
+ * OpenAPI / Swagger specification parser.
  *
  * Supported formats:
  *   - OpenAPI 3.x JSON  (.json)
  *   - OpenAPI 3.x YAML  (.yaml, .yml)
+ *   - Swagger 2.0 JSON / YAML — converted into the same ParsedEndpoint shape.
  *
  * This module never throws. All errors are captured and returned in
  * ParseResult.errors so callers can surface them inline without a try/catch.
@@ -19,6 +20,18 @@
  *   - Missing `paths` block     → zero endpoints, no error (valid per spec).
  *   - Local `$ref` cycles / depth / unresolved / remote → non-fatal ParseError
  *                                  (endpoints still returned when possible).
+ *
+ * Swagger 2.0 strategy (issue #1075):
+ *   - A document carrying a string `swagger` field is parsed as 2.0.
+ *   - `basePath` is prefixed to every extracted path.
+ *   - `query` / `path` / `body` parameters (path-item and operation level,
+ *     operation level wins; local `$ref`s resolved) are mapped onto
+ *     ParsedEndpoint.parameters.
+ *   - Features that cannot be represented (custom `consumes` / `produces`
+ *     media types, `header` / `formData` parameters, unresolved `$ref`s)
+ *     produce non-fatal ParseResult.warnings instead of failing the import.
+ *   - ParseResult.source reports which flavour produced the endpoints so the
+ *     UI can tell the user the file was converted.
  */
 
 // ---------------------------------------------------------------------------
@@ -32,7 +45,7 @@
 export type ParsedParameter = {
   /** Parameter name, e.g. `"id"`. */
   name: string;
-  /** Location: `"path" | "query" | "header" | "cookie"`. */
+  /** Location: `"path" | "query" | "header" | "cookie"` (Swagger 2.0 also `"body"`). */
   in?: string;
   /** Whether the parameter is required. */
   required?: boolean;
@@ -63,6 +76,16 @@ export type ParsedEndpoint = {
 };
 
 /**
+ * A request parameter attached to a {@link ParsedEndpoint} from a Swagger 2.0
+ * document. Same shape as {@link ParsedParameter}; kept as a named alias for
+ * callers written against the Swagger importer.
+ */
+export type ParsedEndpointParameter = ParsedParameter;
+
+/** Which specification flavour produced the extracted endpoints. */
+export type ParsedSpecSource = 'openapi3' | 'swagger2';
+
+/**
  * A parse or validation error.
  * The `line` field is populated whenever the underlying parser can determine
  * which source line triggered the error.
@@ -83,6 +106,13 @@ export type ParseError = {
 export type ParseResult = {
   endpoints: ParsedEndpoint[];
   errors: ParseError[];
+  /**
+   * Non-fatal diagnostics. OpenAPI 3.x specs never produce these; Swagger 2.0
+   * documents do when they use features the endpoint stub cannot represent.
+   */
+  warnings: ParseError[];
+  /** The specification flavour the endpoints came from. */
+  source: ParsedSpecSource;
 };
 
 // ---------------------------------------------------------------------------
@@ -103,6 +133,12 @@ const HTTP_METHODS = new Set([
 
 /** Maximum $ref resolution depth (guards against pathological nesting). */
 const MAX_REF_DEPTH = 32;
+
+/**
+ * Swagger 2.0 parameter locations that map onto a ParsedEndpoint stub. 2.0 also
+ * defines `header` and `formData`; those are reported as warnings instead.
+ */
+const SWAGGER2_PARAM_LOCATIONS = new Set(['query', 'path', 'body']);
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -133,6 +169,8 @@ export function parseOpenApiSpec(text: string, filename: string): ParseResult {
         message: `Unsupported file type: "${filename}". Accepted formats are .json, .yaml, and .yml.`,
       },
     ],
+    warnings: [],
+    source: 'openapi3',
   };
 }
 
@@ -155,6 +193,8 @@ function parseJson(text: string): ParseResult {
           line: extractJsonErrorLine(syntaxErr.message, text),
         },
       ],
+      warnings: [],
+      source: 'openapi3',
     };
   }
 
@@ -207,7 +247,7 @@ function parseYaml(text: string): ParseResult {
   const { root, errors } = parseYamlToMap(text);
 
   if (errors.length > 0 && root === null) {
-    return { endpoints: [], errors };
+    return { endpoints: [], errors, warnings: [], source: 'openapi3' };
   }
 
   return extractEndpoints(root ?? {}, errors);
@@ -535,21 +575,21 @@ function resolveRef(value: unknown, ctx: ResolveContext): unknown {
   // Remote / external refs — never fetch.
   if (!ref.startsWith('#/')) {
     ctx.errors.push({
-      message: `Remote or external \( ref is not resolved (not fetched): " \){ref}"`,
+      message: `Remote or external $ref is not resolved (not fetched): "${ref}"`,
     });
     return undefined;
   }
 
   if (ctx.depth >= MAX_REF_DEPTH) {
     ctx.errors.push({
-      message: `Maximum \( ref resolution depth ( \){MAX_REF_DEPTH}) exceeded at "${ref}"`,
+      message: `Maximum $ref resolution depth (${MAX_REF_DEPTH}) exceeded at "${ref}"`,
     });
     return undefined;
   }
 
   if (ctx.stack.has(ref)) {
     ctx.errors.push({
-      message: `Cyclic \( ref detected: " \){ref}"`,
+      message: `Cyclic $ref detected: "${ref}"`,
     });
     return undefined;
   }
@@ -557,7 +597,7 @@ function resolveRef(value: unknown, ctx: ResolveContext): unknown {
   const target = getByJsonPointer(ctx.root, ref.slice(1)); // drop leading '#'
   if (target === undefined) {
     ctx.errors.push({
-      message: `Unresolved local \( ref: " \){ref}"`,
+      message: `Unresolved local $ref: "${ref}"`,
     });
     return undefined;
   }
@@ -705,10 +745,17 @@ function extractEndpoints(spec: unknown, existingErrors: ParseError[]): ParseRes
         ...existingErrors,
         { message: 'The file does not contain a valid OpenAPI object at the root level.' },
       ],
+      warnings: [],
+      source: 'openapi3',
     };
   }
 
   const specObj = spec as Record<string, unknown>;
+
+  // ── Swagger 2.0 ─────────────────────────────────────────────────────────
+  if (typeof specObj['swagger'] === 'string') {
+    return extractSwagger2Endpoints(specObj, existingErrors);
+  }
 
   const openapiVersion = specObj['openapi'];
 
@@ -719,9 +766,11 @@ function extractEndpoints(spec: unknown, existingErrors: ParseError[]): ParseRes
         ...existingErrors,
         {
           message:
-            'Missing "openapi" field. This parser only supports OpenAPI 3.x specifications.',
+            'Missing "openapi" field. This parser only supports OpenAPI 3.x and Swagger 2.0 specifications.',
         },
       ],
+      warnings: [],
+      source: 'openapi3',
     };
   }
 
@@ -731,16 +780,18 @@ function extractEndpoints(spec: unknown, existingErrors: ParseError[]): ParseRes
       errors: [
         ...existingErrors,
         {
-          message: `Unsupported OpenAPI version "${openapiVersion}". Only OpenAPI 3.x is supported.`,
+          message: `Unsupported OpenAPI version "${openapiVersion}". Only OpenAPI 3.x and Swagger 2.0 are supported.`,
         },
       ],
+      warnings: [],
+      source: 'openapi3',
     };
   }
 
   const paths = specObj['paths'];
 
   if (paths === undefined || paths === null) {
-    return { endpoints: [], errors: existingErrors };
+    return { endpoints: [], errors: existingErrors, warnings: [], source: 'openapi3' };
   }
 
   if (typeof paths !== 'object' || Array.isArray(paths)) {
@@ -750,6 +801,8 @@ function extractEndpoints(spec: unknown, existingErrors: ParseError[]): ParseRes
         ...existingErrors,
         { message: 'The "paths" field is present but is not a valid object.' },
       ],
+      warnings: [],
+      source: 'openapi3',
     };
   }
 
@@ -814,5 +867,171 @@ function extractEndpoints(spec: unknown, existingErrors: ParseError[]): ParseRes
   return {
     endpoints,
     errors: [...existingErrors, ...refErrors],
+    warnings: [],
+    source: 'openapi3',
   };
         }
+
+// ---------------------------------------------------------------------------
+// Swagger 2.0 conversion (issue #1075)
+// ---------------------------------------------------------------------------
+
+/**
+ * Prefix a Swagger 2.0 `basePath` onto a path key, collapsing redundant
+ * slashes. An empty or `/` basePath leaves the path untouched.
+ */
+function joinBasePath(basePath: string, pathKey: string): string {
+  const base = basePath.replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!base) return pathKey;
+  return `/${base}${pathKey.startsWith('/') ? pathKey : `/${pathKey}`}`;
+}
+
+/**
+ * Extract endpoints from a Swagger 2.0 document.
+ *
+ * `basePath` is prefixed to every path, and query / path / body parameters are
+ * mapped onto each stub (local `$ref`s such as `#/parameters/...` are resolved
+ * with the same resolver as OpenAPI 3.x). Anything the ParsedEndpoint shape
+ * cannot carry is reported through `warnings` so the import still succeeds.
+ */
+function extractSwagger2Endpoints(
+  spec: Record<string, unknown>,
+  existingErrors: ParseError[],
+): ParseResult {
+  const warnings: ParseError[] = [];
+  const warned = new Set<string>();
+  // Keep the warning list short and deterministic: at most one entry per
+  // distinct message, regardless of how many operations trigger it.
+  const warn = (message: string) => {
+    if (warned.has(message)) return;
+    warned.add(message);
+    warnings.push({ message });
+  };
+
+  const version = spec['swagger'];
+  if (version !== '2.0') {
+    return {
+      endpoints: [],
+      errors: [
+        ...existingErrors,
+        {
+          message: `Unsupported Swagger version "${String(version)}". Only Swagger 2.0 is supported.`,
+        },
+      ],
+      warnings,
+      source: 'swagger2',
+    };
+  }
+
+  // `consumes` / `produces` describe request/response media types, which the
+  // ParsedEndpoint shape has no field for. Warn rather than fail so the
+  // endpoints themselves still import.
+  for (const feature of ['consumes', 'produces'] as const) {
+    if (feature in spec) {
+      warn(
+        `Swagger 2.0 "${feature}" media types cannot be represented in the imported endpoints and were ignored.`,
+      );
+    }
+  }
+
+  const paths = spec['paths'];
+  // Swagger treats `paths` as required but an absent block simply means no
+  // endpoints; only a malformed one is an error.
+  if (paths === undefined || paths === null) {
+    return { endpoints: [], errors: existingErrors, warnings, source: 'swagger2' };
+  }
+  if (typeof paths !== 'object' || Array.isArray(paths)) {
+    return {
+      endpoints: [],
+      errors: [
+        ...existingErrors,
+        { message: 'The "paths" field is present but is not a valid object.' },
+      ],
+      warnings,
+      source: 'swagger2',
+    };
+  }
+
+  const basePath = typeof spec['basePath'] === 'string' ? spec['basePath'] : '';
+  // Unresolvable refs are non-fatal for 2.0 imports: collect them here and
+  // surface them as warnings rather than errors.
+  const refProblems: ParseError[] = [];
+  const ctx: ResolveContext = { root: spec, errors: refProblems, stack: new Set(), depth: 0 };
+
+  const collectParameters = (
+    pathItem: Record<string, unknown>,
+    operation: Record<string, unknown> | null,
+  ): ParsedParameter[] => {
+    const parameters: ParsedParameter[] = [];
+    const seen = new Set<string>();
+    // Operation-level declarations come first so they win over path-item ones
+    // with the same `in` + `name`.
+    const declarations = [
+      ...(Array.isArray(operation?.['parameters']) ? (operation?.['parameters'] as unknown[]) : []),
+      ...(Array.isArray(pathItem['parameters']) ? (pathItem['parameters'] as unknown[]) : []),
+    ];
+
+    for (const declaration of declarations) {
+      const resolved = resolveRef(declaration, ctx);
+      if (
+        !isParameterObject(resolved) ||
+        typeof (resolved as Record<string, unknown>)['in'] !== 'string'
+      ) {
+        warn('Skipped a Swagger 2.0 parameter that could not be resolved (unresolved $ref or malformed entry).');
+        continue;
+      }
+
+      const name = resolved['name'] as string;
+      const location = resolved['in'] as string;
+      if (!SWAGGER2_PARAM_LOCATIONS.has(location)) {
+        warn(`Swagger 2.0 parameter location "${location}" is not supported and was skipped.`);
+        continue;
+      }
+
+      const key = `${location}:${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const param: ParsedParameter = {
+        name,
+        in: location,
+        // `path` parameters are required by definition.
+        required: location === 'path' ? true : resolved['required'] === true,
+      };
+      if (typeof resolved['description'] === 'string') param.description = resolved['description'];
+      parameters.push(param);
+    }
+
+    return parameters;
+  };
+
+  const endpoints: ParsedEndpoint[] = [];
+  for (const [pathKey, rawPathItem] of Object.entries(paths as Record<string, unknown>)) {
+    const pathItem = resolveRef(rawPathItem, ctx);
+    if (typeof pathItem !== 'object' || pathItem === null || Array.isArray(pathItem)) continue;
+    const pathItemObj = pathItem as Record<string, unknown>;
+
+    for (const methodKey of Object.keys(pathItemObj)) {
+      if (!HTTP_METHODS.has(methodKey.toLowerCase())) continue;
+
+      const operation = pathItemObj[methodKey];
+      const op =
+        typeof operation === 'object' && operation !== null && !Array.isArray(operation)
+          ? (operation as Record<string, unknown>)
+          : null;
+      const summary = op && typeof op['summary'] === 'string' ? op['summary'] : undefined;
+      const parameters = collectParameters(pathItemObj, op);
+
+      endpoints.push({
+        path: joinBasePath(basePath, pathKey),
+        method: methodKey.toUpperCase(),
+        ...(summary !== undefined ? { summary } : {}),
+        ...(parameters.length > 0 ? { parameters } : {}),
+      });
+    }
+  }
+
+  for (const problem of refProblems) warn(problem.message);
+
+  return { endpoints, errors: existingErrors, warnings, source: 'swagger2' };
+}
