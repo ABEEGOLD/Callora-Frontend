@@ -11,6 +11,10 @@ export interface WebhookDelivery {
   status: "delivered" | "failed" | "pending";
   attempts: number;
   lastAttemptAt: string;
+  createdAt?: string | Date;
+  requestBody?: string | object;
+  responseStatus?: number;
+  responseBody?: string | object;
 }
 
 export interface WebhookFilter {
@@ -41,6 +45,10 @@ export const fetchDeliveries = async (
           status: "delivered",
           attempts: 1,
           lastAttemptAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          requestBody: { event: "payment.succeeded", amount: 100 },
+          responseStatus: 200,
+          responseBody: { ok: true },
         },
         {
           id: `dlv_2_${filter.page}`,
@@ -48,6 +56,10 @@ export const fetchDeliveries = async (
           status: "failed",
           attempts: 3,
           lastAttemptAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          requestBody: { event: "payment.failed", amount: 50 },
+          responseStatus: 500,
+          responseBody: { error: "Internal Server Error" },
         },
       ];
 
