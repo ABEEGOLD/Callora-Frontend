@@ -10,10 +10,6 @@
  * `VITE_*` variables and their defaults.
  */
 
-/** Stellar block-explorer base URL used to build transaction links. */
-export const EXPLORER_BASE_URL =
-  "https://stellar.expert/explorer/testnet/tx/";
-
 /** Public Callora API base URL used in code examples and requests. */
 export const API_BASE_URL = "https://api.callora.com";
 
@@ -141,6 +137,48 @@ export const API_BASE = normalizeBaseUrl(
 export const STELLAR_NETWORK: StellarNetwork = resolveStellarNetwork(
   runtimeEnv.VITE_STELLAR_NETWORK as string | undefined,
 );
+
+// ─── Stellar wallet deposits ─────────────────────────────────────────────────
+// Declared after `STELLAR_NETWORK` because they derive from it.
+
+const STELLAR_NETWORK_PASSPHRASES: Record<StellarNetwork, string> = {
+  mainnet: "Public Global Stellar Network ; September 2015",
+  testnet: "Test SDF Network ; September 2015",
+  futurenet: "Test SDF Future Network ; October 2022",
+};
+
+const DEFAULT_STELLAR_RPC_URLS: Record<StellarNetwork, string> = {
+  // Mainnet has no public default: deployments must set VITE_STELLAR_RPC_URL.
+  mainnet: "",
+  testnet: "https://soroban-testnet.stellar.org",
+  futurenet: "https://rpc-futurenet.stellar.org",
+};
+
+/** Network passphrase transactions are signed and submitted against. */
+export const STELLAR_NETWORK_PASSPHRASE =
+  STELLAR_NETWORK_PASSPHRASES[STELLAR_NETWORK];
+
+/** Soroban RPC endpoint; `VITE_STELLAR_RPC_URL` overrides the network default. */
+export const STELLAR_RPC_URL =
+  normalizeBaseUrl(runtimeEnv.VITE_STELLAR_RPC_URL as string | undefined) ||
+  DEFAULT_STELLAR_RPC_URLS[STELLAR_NETWORK];
+
+/** Deployed Callora vault contract that receives deposits. */
+export const STELLAR_VAULT_CONTRACT_ID = String(
+  runtimeEnv.VITE_STELLAR_VAULT_CONTRACT_ID ?? "",
+).trim();
+
+export const STELLAR_USDC_DECIMALS = 7;
+
+/** Shows the deposit demo-outcome toggle (dev server + explicit opt-in only). */
+export const ENABLE_DEMO_OUTCOME =
+  import.meta.env.DEV &&
+  import.meta.env.VITE_ENABLE_DEMO_OUTCOME === "true";
+
+/** Stellar block-explorer base URL used to build transaction links. */
+export const EXPLORER_BASE_URL = `https://stellar.expert/explorer/${
+  STELLAR_NETWORK === "mainnet" ? "public" : STELLAR_NETWORK
+}/tx/`;
 
 /**
  * Build a request path against the configured API base.
